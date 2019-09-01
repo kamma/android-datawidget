@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+
+    <!-- Template for brightness gadget toggle button description. -->
+    <string name="gadget_brightness_template">Brightness <xliff:g name="state" example="half">%1$s</xliff:g></string>
+    <!-- Brightness gadget value used to describe automatic brightness state. -->
+    <string name="gadget_brightness_state_auto">auto</string>
+    <!-- Brightness gadget value used to describe maximum brightness state. -->
+    <string name="gadget_brightness_state_full">full</string>
+    <!-- Brightness gadget value used to describe half brightness state. -->
+    <string name="gadget_brightness_state_half">half</string>
+    <!-- Brightness gadget value used to describe minimum brightness state. -->
+    <string name="gadget_brightness_state_off">off</string>
+
+
+</resources>
