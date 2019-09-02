@@ -33,6 +33,10 @@ import android.content.pm.PackageManager;
 import android.database.ContentObserver;
 import android.hardware.display.DisplayManager;
 import android.net.ConnectivityManager;
+import android.net.ConnectivityManager.NetworkCallback;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
 import android.net.Uri;
 import android.net.wifi.WifiManager;
 import android.os.AsyncTask;
@@ -49,149 +53,150 @@ import android.widget.Toast;
  * Provides control of power-related settings from a widget.
  */
 public class DataControlWidgetProvider extends AppWidgetProvider {
-    static final String TAG = "DataControlWidgetProvider";
+	static final String TAG = "DataControlWidgetProvider";
 
-    static final ComponentName THIS_APPWIDGET = new ComponentName("com.android.datawidget",
-            "com.android.datawidget.DataControlWidgetProvider");
+	static final ComponentName THIS_APPWIDGET = new ComponentName("com.android.datawidget",
+			"com.android.datawidget.DataControlWidgetProvider");
 
-    private static final int BUTTON_WIFI = 0;
-    private static final int BUTTON_APN = 1;
-    private static final int BUTTON_BLUETOOTH = 2;
-    private static final int BUTTON_SLEEP = 3;
-    private static final int BUTTON_BRIGHTNESS = 4;
+	private static final int BUTTON_WIFI = 0;
+	private static final int BUTTON_APN = 1;
+	private static final int BUTTON_BLUETOOTH = 2;
+	private static final int BUTTON_SLEEP = 3;
+	private static final int BUTTON_BRIGHTNESS = 4;
 
-    // Position in the widget bar, to enable different graphics for left, center
-    // and right buttons
-    private static final int POS_LEFT = 0;
-    private static final int POS_CENTER = 1;
+	// Position in the widget bar, to enable different graphics for left, center
+	// and right buttons
+	private static final int POS_LEFT = 0;
+	private static final int POS_CENTER = 1;
 
-    private static final int[] ind_data_DRAWABLE_OFF = {R.drawable.appwidget_settings_ind_off_l_holo,
-            R.drawable.appwidget_settings_ind_off_c_holo, R.drawable.appwidget_settings_ind_off_r_holo};
+	private static final int[] ind_data_DRAWABLE_OFF = { R.drawable.appwidget_settings_ind_off_l_holo,
+			R.drawable.appwidget_settings_ind_off_c_holo, R.drawable.appwidget_settings_ind_off_r_holo };
 
-    private static final int[] ind_data_DRAWABLE_MID = {R.drawable.appwidget_settings_ind_mid_l_holo,
-            R.drawable.appwidget_settings_ind_mid_c_holo, R.drawable.appwidget_settings_ind_mid_r_holo};
+	private static final int[] ind_data_DRAWABLE_MID = { R.drawable.appwidget_settings_ind_mid_l_holo,
+			R.drawable.appwidget_settings_ind_mid_c_holo, R.drawable.appwidget_settings_ind_mid_r_holo };
 
-    private static final int[] ind_data_DRAWABLE_ON = {R.drawable.appwidget_settings_ind_on_l_holo,
-            R.drawable.appwidget_settings_ind_on_c_holo, R.drawable.appwidget_settings_ind_on_r_holo};
+	private static final int[] ind_data_DRAWABLE_ON = { R.drawable.appwidget_settings_ind_on_l_holo,
+			R.drawable.appwidget_settings_ind_on_c_holo, R.drawable.appwidget_settings_ind_on_r_holo };
 
-    private static final StateTracker sWifiState = new WifiStateTracker();
-    private static final StateTracker sBluetoothState = new BluetoothStateTracker();
-    private static final StateTracker sApnState = new ApnStateTracker();
+	private static final StateTracker sWifiState = new WifiStateTracker();
+	private static final StateTracker sBluetoothState = new BluetoothStateTracker();
+	private static final StateTracker sApnState = new ApnStateTracker();
 
-    /**
-     * Minimum brightness at which the indicator is shown at half-full and ON
-     */
-    private static final float HALF_BRIGHTNESS_THRESHOLD = 0.3f;
-    /**
-     * Minimum brightness at which the indicator is shown at full
-     */
-    private static final float FULL_BRIGHTNESS_THRESHOLD = 0.8f;
-    private static SettingsObserver sSettingsObserver;
+	/**
+	 * Minimum brightness at which the indicator is shown at half-full and ON
+	 */
+	private static final float HALF_BRIGHTNESS_THRESHOLD = 0.3f;
+	/**
+	 * Minimum brightness at which the indicator is shown at full
+	 */
+	private static final float FULL_BRIGHTNESS_THRESHOLD = 0.8f;
+	private static SettingsObserver sSettingsObserver;
+	private static ConnectionStateMonitor csm;
 
-    /**
-     * The state machine for a setting's toggling, tracking reality versus the
-     * user's intent.
-     * <p>
-     * This is necessary because reality moves relatively slowly (turning on &amp;
-     * off radio drivers), compared to user's expectations.
-     */
-    private abstract static class StateTracker {
-        private Boolean mActualState = null; // initially not set
-        private Boolean mIntendedState = null; // initially not set
+	/**
+	 * The state machine for a setting's toggling, tracking reality versus the
+	 * user's intent.
+	 * <p>
+	 * This is necessary because reality moves relatively slowly (turning on &amp;
+	 * off radio drivers), compared to user's expectations.
+	 */
+	private abstract static class StateTracker {
+		private Boolean mActualState = null; // initially not set
+		private Boolean mIntendedState = null; // initially not set
 
-        /**
-         * Return the ID of the main large image button for the setting.
-         */
-        public abstract int getButtonId();
+		/**
+		 * Return the ID of the main large image button for the setting.
+		 */
+		public abstract int getButtonId();
 
-        /**
-         * Returns the small indicator image ID underneath the setting.
-         */
-        public abstract int getIndicatorId();
+		/**
+		 * Returns the small indicator image ID underneath the setting.
+		 */
+		public abstract int getIndicatorId();
 
-        /**
-         * Returns the resource ID of the image to show as a function of the on-vs-off
-         * state.
-         */
-        public abstract int getButtonImageId(boolean on);
+		/**
+		 * Returns the resource ID of the image to show as a function of the on-vs-off
+		 * state.
+		 */
+		public abstract int getButtonImageId(boolean on);
 
-        /**
-         * Returns the position in the button bar - either POS_LEFT, POS_RIGHT or
-         * POS_CENTER.
-         */
-        public int getPosition() {
-            return POS_CENTER;
-        }
+		/**
+		 * Returns the position in the button bar - either POS_LEFT, POS_RIGHT or
+		 * POS_CENTER.
+		 */
+		public int getPosition() {
+			return POS_CENTER;
+		}
 
-        /**
-         * Updates the remote views depending on the state (off, on, turning off,
-         * turning on) of the setting.
-         */
-        public final void setImageViewResources(Context context, RemoteViews views) {
-            int buttonId = getButtonId();
-            int indicatorId = getIndicatorId();
-            int pos = getPosition();
-            if (getActualState(context) == false) {
-                views.setImageViewResource(buttonId, getButtonImageId(false));
-                views.setImageViewResource(indicatorId, ind_data_DRAWABLE_OFF[pos]);
-            } else if (getActualState(context) == true) {
-                views.setImageViewResource(buttonId, getButtonImageId(true));
-                views.setImageViewResource(indicatorId, ind_data_DRAWABLE_ON[pos]);
-            }
-        }
+		/**
+		 * Updates the remote views depending on the state (off, on, turning off,
+		 * turning on) of the setting.
+		 */
+		public final void setImageViewResources(Context context, RemoteViews views) {
+			int buttonId = getButtonId();
+			int indicatorId = getIndicatorId();
+			int pos = getPosition();
+			if (getActualState(context) == false) {
+				views.setImageViewResource(buttonId, getButtonImageId(false));
+				views.setImageViewResource(indicatorId, ind_data_DRAWABLE_OFF[pos]);
+			} else if (getActualState(context) == true) {
+				views.setImageViewResource(buttonId, getButtonImageId(true));
+				views.setImageViewResource(indicatorId, ind_data_DRAWABLE_ON[pos]);
+			}
+		}
 
-        /**
-         * Gets underlying actual state.
-         *
-         * @param context
-         * @return true or false
-         */
-        public abstract boolean getActualState(Context context);
+		/**
+		 * Gets underlying actual state.
+		 *
+		 * @param context
+		 * @return true or false
+		 */
+		public abstract boolean getActualState(Context context);
 
-        /**
-         * Actually make the desired change to the underlying radio API.
-         */
-        protected abstract void requestStateChange(Context context);
-    }
+		/**
+		 * Actually make the desired change to the underlying radio API.
+		 */
+		protected abstract void requestStateChange(Context context);
+	}
 
-    /**
-     * Subclass of StateTracker to get/set Wifi state.
-     */
-    private static final class WifiStateTracker extends StateTracker {
-        public int getButtonId() {
-            return R.id.img_data_wifi;
-        }
+	/**
+	 * Subclass of StateTracker to get/set Wifi state.
+	 */
+	private static final class WifiStateTracker extends StateTracker {
+		public int getButtonId() {
+			return R.id.img_data_wifi;
+		}
 
-        public int getIndicatorId() {
-            return R.id.ind_data_wifi;
-        }
+		public int getIndicatorId() {
+			return R.id.ind_data_wifi;
+		}
 
-        public int getButtonImageId(boolean on) {
-            return on ? R.drawable.ic_appwidget_settings_wifi_on_holo : R.drawable.ic_appwidget_settings_wifi_off_holo;
-        }
+		public int getButtonImageId(boolean on) {
+			return on ? R.drawable.ic_appwidget_settings_wifi_on_holo : R.drawable.ic_appwidget_settings_wifi_off_holo;
+		}
 
-        @Override
-        public int getPosition() {
-            return POS_LEFT;
-        }
+		@Override
+		public int getPosition() {
+			return POS_LEFT;
+		}
 
-        @Override
-        public boolean getActualState(Context context) {
+		@Override
+		public boolean getActualState(Context context) {
 			WifiManager wifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
 			if (wifiManager != null) {
 				int actualState = wifiManager.getWifiState();
 				Log.d(TAG, "Actual wifiState:" + actualState);
-				if (actualState==WifiManager.WIFI_STATE_ENABLED)
+				if (actualState == WifiManager.WIFI_STATE_ENABLED)
 					return true;
 				else
 					return false;
 			}
 			return false;
-        }
+		}
 
-        @Override
-        protected void requestStateChange(Context context) {
-            Log.d(TAG, "WIFI toggle");
+		@Override
+		protected void requestStateChange(Context context) {
+			Log.d(TAG, "WIFI toggle");
 			WifiManager wifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
 			if (wifiManager == null) {
 				Log.d(TAG, "No WifiManager.");
@@ -230,50 +235,50 @@ public class DataControlWidgetProvider extends AppWidgetProvider {
 					Toast.makeText(context, "Cannot change WiFi state.", Toast.LENGTH_SHORT).show();
 					return null;
 				}
-				
+
 				@Override
 				protected void onPostExecute(Void result) {
 					updateWidget(context);
 				};
 			}.execute();
-        }
-    }
+		}
+	}
 
-    /**
-     * Subclass of StateTracker to get/set Bluetooth state.
-     */
-    private static final class BluetoothStateTracker extends StateTracker {
-        public int getButtonId() {
-            return R.id.img_data_bluetooth;
-        }
+	/**
+	 * Subclass of StateTracker to get/set Bluetooth state.
+	 */
+	private static final class BluetoothStateTracker extends StateTracker {
+		public int getButtonId() {
+			return R.id.img_data_bluetooth;
+		}
 
-        public int getIndicatorId() {
-            return R.id.ind_data_bluetooth;
-        }
+		public int getIndicatorId() {
+			return R.id.ind_data_bluetooth;
+		}
 
-        public int getButtonImageId(boolean on) {
-            return on ? R.drawable.ic_appwidget_settings_bluetooth_on_holo
-                    : R.drawable.ic_appwidget_settings_bluetooth_off_holo;
-        }
+		public int getButtonImageId(boolean on) {
+			return on ? R.drawable.ic_appwidget_settings_bluetooth_on_holo
+					: R.drawable.ic_appwidget_settings_bluetooth_off_holo;
+		}
 
-        @Override
-        public boolean getActualState(Context context) {
-        	BluetoothAdapter ba = BluetoothAdapter.getDefaultAdapter();
+		@Override
+		public boolean getActualState(Context context) {
+			BluetoothAdapter ba = BluetoothAdapter.getDefaultAdapter();
 			if (ba != null) {
 				int actualState = ba.getState();
 				Log.d(TAG, "Actual btState:" + actualState);
-				if (actualState==BluetoothAdapter.STATE_ON)
+				if (actualState == BluetoothAdapter.STATE_ON)
 					return true;
 				else
 					return false;
 			}
 			return false;
-        }
+		}
 
-        @Override
-        protected void requestStateChange(Context context) {
-            Log.d(TAG, "BT toggle");
-            BluetoothAdapter ba = BluetoothAdapter.getDefaultAdapter();
+		@Override
+		protected void requestStateChange(Context context) {
+			Log.d(TAG, "BT toggle");
+			BluetoothAdapter ba = BluetoothAdapter.getDefaultAdapter();
 			if (ba == null) {
 				Log.d(TAG, "No BluetoothAdapter.");
 				return;
@@ -304,46 +309,46 @@ public class DataControlWidgetProvider extends AppWidgetProvider {
 					Toast.makeText(context, "Cannot change BT state.", Toast.LENGTH_SHORT).show();
 					return null;
 				}
-				
+
 				@Override
 				protected void onPostExecute(Void result) {
 					updateWidget(context);
 				};
 			}.execute();
-        }
-    }
+		}
+	}
 
-    /**
-     * Subclass of StateTracker for APN state.
-     */
-    private static final class ApnStateTracker extends StateTracker {
-        public int getButtonId() {
-            return R.id.img_data_apn;
-        }
+	/**
+	 * Subclass of StateTracker for APN state.
+	 */
+	private static final class ApnStateTracker extends StateTracker {
+		public int getButtonId() {
+			return R.id.img_data_apn;
+		}
 
-        public int getIndicatorId() {
-            return R.id.ind_data_apn;
-        }
+		public int getIndicatorId() {
+			return R.id.ind_data_apn;
+		}
 
-        public int getButtonImageId(boolean on) {
-            return on ? R.drawable.ic_appwidget_settings_apn_on_holo : R.drawable.ic_appwidget_settings_apn_off_holo;
-        }
+		public int getButtonImageId(boolean on) {
+			return on ? R.drawable.ic_appwidget_settings_apn_on_holo : R.drawable.ic_appwidget_settings_apn_off_holo;
+		}
 
-        @Override
-        public boolean getActualState(Context context) {
-        	TelephonyManager tm = TelephonyManager.from(context);
+		@Override
+		public boolean getActualState(Context context) {
+			TelephonyManager tm = TelephonyManager.from(context);
 			if (tm != null) {
 				boolean actualState = tm.getDataEnabled();
 				Log.d(TAG, "Actual apnState:" + actualState);
 				return actualState;
 			}
 			return false;
-        }
+		}
 
-        @Override
-        public void requestStateChange(final Context context) {
-            Log.d(TAG, "APN DATA toggle");
-            TelephonyManager tm = TelephonyManager.from(context);
+		@Override
+		public void requestStateChange(final Context context) {
+			Log.d(TAG, "APN DATA toggle");
+			TelephonyManager tm = TelephonyManager.from(context);
 			if (tm == null) {
 				Log.d(TAG, "No TelephonyManager.");
 				return;
@@ -371,19 +376,26 @@ public class DataControlWidgetProvider extends AppWidgetProvider {
 					Toast.makeText(context, "Cannot change APN state.", Toast.LENGTH_SHORT).show();
 					return null;
 				}
-				
+
 				@Override
 				protected void onPostExecute(Void result) {
 					updateWidget(context);
 				};
 			}.execute();
-        }
-    }
+		}
+	}
 
 	private static void checkObserver(Context context) {
 		if (sSettingsObserver == null) {
 			sSettingsObserver = new SettingsObserver(new Handler(), context.getApplicationContext());
 			sSettingsObserver.startObserving();
+		}
+	}
+
+	private static void checkConnectionStateMonitor(Context context) {
+		if (csm == null) {
+			csm = new ConnectionStateMonitor(context);
+			csm.enable();
 		}
 	}
 
@@ -404,8 +416,7 @@ public class DataControlWidgetProvider extends AppWidgetProvider {
 		pm.setComponentEnabledSetting(new ComponentName(context.getPackageName(), clazz.getName()),
 				PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP);
 		checkObserver(context);
-		IntentFilter intentFilter = new IntentFilter(WifiManager.WIFI_STATE_CHANGED_ACTION);
-		context.registerReceiver(wifiStateReceiver, intentFilter);
+		checkConnectionStateMonitor(context);
 	}
 
 	@Override
@@ -418,9 +429,9 @@ public class DataControlWidgetProvider extends AppWidgetProvider {
 			sSettingsObserver.stopObserving();
 			sSettingsObserver = null;
 		}
-		if (wifiStateReceiver != null) {
-			context.unregisterReceiver(wifiStateReceiver);
-			wifiStateReceiver = null;
+		if (csm != null) {
+			csm.disable();
+			csm = null;
 		}
 	}
 
@@ -453,6 +464,7 @@ public class DataControlWidgetProvider extends AppWidgetProvider {
 		final AppWidgetManager gm = AppWidgetManager.getInstance(context);
 		gm.updateAppWidget(THIS_APPWIDGET, views);
 		checkObserver(context);
+		checkConnectionStateMonitor(context);
 	}
 
 	/**
@@ -682,21 +694,41 @@ public class DataControlWidgetProvider extends AppWidgetProvider {
 			updateWidget(mContext);
 		}
 	}
-	
-    private BroadcastReceiver wifiStateReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            int wifiStateExtra = intent.getIntExtra(WifiManager.EXTRA_WIFI_STATE,
-                    WifiManager.WIFI_STATE_UNKNOWN);
- 
-            switch (wifiStateExtra) {
-                case WifiManager.WIFI_STATE_ENABLED:
-                	Log.d(TAG, "WiFi is ON");
-                    break;
-                case WifiManager.WIFI_STATE_DISABLED:
-                	Log.d(TAG, "WiFi is OFF");
-                	break;
-            }
-        }
-    };
+
+	public static class ConnectionStateMonitor extends NetworkCallback {
+
+		final NetworkRequest networkRequest;
+		private Context mContext;
+
+		public ConnectionStateMonitor(Context mContext) {
+			this.mContext = mContext;
+			networkRequest = new NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
+					.addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+					.addTransportType(NetworkCapabilities.TRANSPORT_BLUETOOTH).build();
+		}
+
+		public void disable() {
+			ConnectivityManager connectivityManager = (ConnectivityManager) mContext
+					.getSystemService(Context.CONNECTIVITY_SERVICE);
+			connectivityManager.unregisterNetworkCallback(this);
+		}
+
+		public void enable() {
+			ConnectivityManager connectivityManager = (ConnectivityManager) mContext
+					.getSystemService(Context.CONNECTIVITY_SERVICE);
+			connectivityManager.registerNetworkCallback(networkRequest, this);
+		}
+
+		@Override
+		public void onAvailable(Network network) {
+			Log.d(TAG, "Connection available...");
+			updateWidget(mContext);
+		}
+
+		@Override
+		public void onLost(Network network) {
+			Log.d(TAG, "Connection lost...");
+			updateWidget(mContext);
+		}
+	}
 }
