@@ -23,10 +23,12 @@ import android.app.PendingIntent;
 import android.appwidget.AppWidgetManager;
 import android.appwidget.AppWidgetProvider;
 import android.bluetooth.BluetoothAdapter;
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.database.ContentObserver;
 import android.hardware.display.DisplayManager;
@@ -402,6 +404,8 @@ public class DataControlWidgetProvider extends AppWidgetProvider {
 		pm.setComponentEnabledSetting(new ComponentName(context.getPackageName(), clazz.getName()),
 				PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP);
 		checkObserver(context);
+		IntentFilter intentFilter = new IntentFilter(WifiManager.WIFI_STATE_CHANGED_ACTION);
+		context.registerReceiver(wifiStateReceiver, intentFilter);
 	}
 
 	@Override
@@ -413,6 +417,10 @@ public class DataControlWidgetProvider extends AppWidgetProvider {
 		if (sSettingsObserver != null) {
 			sSettingsObserver.stopObserving();
 			sSettingsObserver = null;
+		}
+		if (wifiStateReceiver != null) {
+			context.unregisterReceiver(wifiStateReceiver);
+			wifiStateReceiver = null;
 		}
 	}
 
@@ -674,4 +682,21 @@ public class DataControlWidgetProvider extends AppWidgetProvider {
 			updateWidget(mContext);
 		}
 	}
+	
+    private BroadcastReceiver wifiStateReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            int wifiStateExtra = intent.getIntExtra(WifiManager.EXTRA_WIFI_STATE,
+                    WifiManager.WIFI_STATE_UNKNOWN);
+ 
+            switch (wifiStateExtra) {
+                case WifiManager.WIFI_STATE_ENABLED:
+                	Log.d(TAG, "WiFi is ON");
+                    break;
+                case WifiManager.WIFI_STATE_DISABLED:
+                	Log.d(TAG, "WiFi is OFF");
+                	break;
+            }
+        }
+    };
 }
